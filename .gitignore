@@ -1,5 +1,5 @@
-# Build output
-agent-deck-relay
+# Build output (root-level compiled binary)
+/agent-deck-relay
 
 # Go
 *.test
