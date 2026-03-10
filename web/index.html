@@ -10,6 +10,7 @@
 <link rel="manifest" href="/manifest.json">
 <link rel="apple-touch-icon" href="/icons/icon-192.png">
 <title>Agent Deck</title>
+<script src="https://cdn.jsdelivr.net/npm/marked@9/marked.min.js"></script>
 <style>
 /* ── Token gate */
 #token-gate{
@@ -164,7 +165,35 @@ header h1{font-size:17px;font-weight:600;letter-spacing:-.3px}
   margin-bottom:5px}
 .conv-group.user .conv-role{color:var(--accent)}
 .conv-group.assistant .conv-role{color:var(--green)}
-.conv-text{white-space:pre-wrap;word-break:break-word;font-size:13px;line-height:1.65;color:var(--text)}
+.conv-text{word-break:break-word;font-size:13px;line-height:1.65;color:var(--text)}
+.conv-text p{margin:0 0 8px;white-space:normal}
+.conv-text p:last-child{margin-bottom:0}
+.conv-text h1,.conv-text h2,.conv-text h3,.conv-text h4{
+  font-weight:600;margin:12px 0 4px;line-height:1.3;white-space:normal}
+.conv-text h1{font-size:16px}.conv-text h2{font-size:15px}
+.conv-text h3,.conv-text h4{font-size:13px}
+.conv-text ul,.conv-text ol{padding-left:20px;margin:4px 0 8px;white-space:normal}
+.conv-text li{margin:2px 0}
+.conv-text li:last-child{margin-bottom:0}
+.conv-text code{
+  font-family:'SF Mono','Menlo',monospace;font-size:11.5px;
+  background:var(--bg3);border:1px solid var(--border);
+  padding:1px 5px;border-radius:4px;white-space:pre-wrap}
+.conv-text pre{
+  background:var(--bg3);border:1px solid var(--border);border-radius:6px;
+  padding:10px 12px;overflow-x:auto;margin:6px 0;white-space:pre}
+.conv-text pre code{
+  background:none;border:none;padding:0;font-size:12px;white-space:pre}
+.conv-text blockquote{
+  border-left:3px solid var(--border);margin:4px 0 8px;
+  padding:2px 12px;color:var(--muted);white-space:normal}
+.conv-text a{color:var(--accent);text-decoration:none}
+.conv-text a:hover{text-decoration:underline}
+.conv-text hr{border:none;border-top:1px solid var(--border);margin:8px 0}
+.conv-text strong{font-weight:600}.conv-text em{font-style:italic}
+.conv-text table{border-collapse:collapse;width:100%;margin:6px 0;font-size:12px}
+.conv-text th,.conv-text td{border:1px solid var(--border);padding:4px 8px;text-align:left}
+.conv-text th{background:var(--bg3);font-weight:600}
 .conv-tool{font-size:12px;color:var(--muted);padding:1px 0;font-family:'SF Mono','Menlo',monospace;
   display:flex;align-items:baseline;flex-wrap:wrap;gap:0 4px;margin-top:3px}
 .conv-tool-name{flex-shrink:0}
@@ -318,6 +347,24 @@ function showError(msg) {
 }
 function esc(s) {
   return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+// Configure marked once (runs after the CDN script loads synchronously)
+if (typeof marked !== 'undefined') {
+  marked.use({ breaks: true, gfm: true });
+}
+
+function renderMarkdown(text) {
+  if (!text) return '';
+  if (typeof marked === 'undefined') {
+    // Fallback: plain escaped text if marked didn't load (e.g. offline on first visit)
+    return `<span style="white-space:pre-wrap">${esc(text)}</span>`;
+  }
+  try {
+    return marked.parse(text);
+  } catch {
+    return `<span style="white-space:pre-wrap">${esc(text)}</span>`;
+  }
 }
 function shortPath(p) {
   if (!p) return '';
@@ -602,7 +649,7 @@ function renderFallbackOutput(history, currentText) {
   for (const entry of past) {
     html += `<div class="conv-past">` +
       `<div class="conv-role" style="color:var(--muted)">Claude · ${relTime(entry.ts)}</div>` +
-      `<div class="conv-text">${esc(entry.summary)}</div>` +
+      `<div class="conv-text">${renderMarkdown(entry.summary)}</div>` +
       `</div>`;
   }
   if (past.length > 0) html += `<div class="hist-divider">latest</div>`;
@@ -635,7 +682,7 @@ function renderOutput(raw) {
   // agent-deck plain text: "Session: ...\nTime: ...\n---\n<content>"
   const sep = raw.indexOf('---\n');
   const content = sep !== -1 ? raw.slice(sep + 4).trim() : raw.trim();
-  return `<div class="conv-group assistant"><div class="conv-text">${esc(content)}</div></div>`;
+  return `<div class="conv-group assistant"><div class="conv-text">${renderMarkdown(content)}</div></div>`;
 }
 
 function renderConversation(msgs) {
@@ -657,7 +704,7 @@ function renderConversation(msgs) {
     html += `<div class="conv-role">${isUser ? 'You' : 'Claude'}</div>`;
 
     for (const m of g.turns) {
-      if (m.text) html += `<div class="conv-text">${esc(m.text)}</div>`;
+      if (m.text) html += `<div class="conv-text">${renderMarkdown(m.text)}</div>`;
       for (const t of (m.toolCalls || [])) {
         html += renderToolBlock(t.name, t.input);
       }
