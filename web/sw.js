@@ -1,8 +1,9 @@
 // Service worker for agent-deck relay PWA.
 // Handles Web Push notifications and basic asset caching.
 
-const CACHE = 'agent-deck-relay-v2';
-const PRECACHE = ['/', '/manifest.json', '/icons/icon-192.png', '/js/marked.min.js'];
+const CACHE = 'agent-deck-relay-v3';
+const PRECACHE = ['/manifest.json', '/icons/icon-192.png', '/js/marked.min.js'];
+// index.html uses network-first so updates are never stuck behind a stale SW cache.
 
 // ── Install: precache shell ───────────────────────────────────────────────────
 self.addEventListener('install', e => {
@@ -20,10 +21,28 @@ self.addEventListener('activate', e => {
   );
 });
 
-// ── Fetch: network-first for API, cache-first for shell ──────────────────────
+// ── Fetch ─────────────────────────────────────────────────────────────────────
 self.addEventListener('fetch', e => {
   const url = new URL(e.request.url);
-  if (url.pathname.startsWith('/api/') || url.pathname === '/health') return; // no caching
+
+  // API routes: never cache
+  if (url.pathname.startsWith('/api/') || url.pathname === '/health') return;
+
+  // index.html: network-first so updates are always picked up when online
+  if (url.pathname === '/' || url.pathname === '/index.html') {
+    e.respondWith(
+      fetch(e.request)
+        .then(res => {
+          const clone = res.clone();
+          caches.open(CACHE).then(c => c.put(e.request, clone));
+          return res;
+        })
+        .catch(() => caches.match(e.request)) // offline fallback
+    );
+    return;
+  }
+
+  // Static assets: cache-first
   e.respondWith(
     caches.match(e.request).then(cached => cached || fetch(e.request))
   );
