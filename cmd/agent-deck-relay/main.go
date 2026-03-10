@@ -30,6 +30,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"syscall"
@@ -37,6 +38,15 @@ import (
 
 	webpush "github.com/SherClockHolmes/webpush-go"
 )
+
+// claudeProjectKey encodes a filesystem path to the directory name Claude Code uses
+// under ~/.claude/projects/. Claude replaces every character that isn't alphanumeric
+// or a hyphen with a hyphen — not just slashes. e.g. "/foo/.bar/baz" → "-foo--bar-baz".
+var nonAlphanumDash = regexp.MustCompile(`[^a-zA-Z0-9-]`)
+
+func claudeProjectKey(path string) string {
+	return nonAlphanumDash.ReplaceAllString(path, "-")
+}
 
 // ── Config ────────────────────────────────────────────────────────────────────
 
@@ -575,9 +585,7 @@ func (r *Relay) handleTranscript(w http.ResponseWriter, req *http.Request) {
 	}
 
 	home := os.Getenv("HOME")
-	// ~/.claude/projects/ uses path with all "/" replaced by "-" (including the leading one)
-	projectKey := strings.ReplaceAll(s.Path, "/", "-")
-	claudeDir := filepath.Join(home, ".claude", "projects", projectKey)
+	claudeDir := filepath.Join(home, ".claude", "projects", claudeProjectKey(s.Path))
 	transcriptPath := filepath.Join(claudeDir, s.ID+".jsonl")
 
 	data, err := os.ReadFile(transcriptPath)
