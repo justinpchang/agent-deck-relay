@@ -1,0 +1,21 @@
+# Build output
+agent-deck-relay
+
+# Go
+*.test
+*.out
+
+# State & secrets
+~/.agent-deck/
+relay-state.json
+token
+*.crt
+*.key
+
+# macOS
+.DS_Store
+
+# Editor
+.idea/
+.vscode/
+*.swp

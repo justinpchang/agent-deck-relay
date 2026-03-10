@@ -1,0 +1,999 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Agent Deck">
+<meta name="theme-color" content="#0d0d0d">
+<link rel="manifest" href="/manifest.json">
+<link rel="apple-touch-icon" href="/icons/icon-192.png">
+<title>Agent Deck</title>
+<style>
+/* ── Token gate */
+#token-gate{
+  position:fixed;inset:0;background:var(--bg);
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  padding:32px;z-index:100;gap:16px;
+}
+#token-gate h2{font-size:20px;font-weight:700;text-align:center}
+#token-gate p{font-size:14px;color:var(--muted);text-align:center;line-height:1.6;max-width:300px}
+#token-input{
+  width:100%;max-width:320px;background:var(--bg3);border:1px solid var(--border);
+  color:var(--text);font-size:16px;padding:12px 14px;border-radius:10px;outline:none;
+}
+#token-input:focus{border-color:var(--accent)}
+#token-submit{
+  width:100%;max-width:320px;background:var(--accent);border:none;color:#fff;
+  font-size:16px;font-weight:600;padding:12px;border-radius:10px;cursor:pointer;
+}
+#token-error{font-size:13px;color:var(--red);display:none;text-align:center}
+
+:root {
+  --bg:#0d0d0d; --bg2:#161616; --bg3:#1e1e1e;
+  --border:#2a2a2a; --text:#e0e0e0; --muted:#606060;
+  --green:#4ec94e; --yellow:#f5c542; --red:#e05c5c; --gray:#444;
+  --accent:#5b8ef5;
+  --safe-top:env(safe-area-inset-top,0px);
+  --safe-bottom:env(safe-area-inset-bottom,0px);
+}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;overflow:hidden}
+body{font-family:-apple-system,'SF Pro Text',sans-serif;background:var(--bg);color:var(--text);
+  display:flex;flex-direction:column;height:100dvh}
+
+/* ── Header */
+header{
+  flex-shrink:0;display:flex;align-items:center;justify-content:space-between;
+  padding:12px 16px;
+  padding-top:calc(12px + var(--safe-top));
+  background:var(--bg2);border-bottom:1px solid var(--border);
+}
+header h1{font-size:17px;font-weight:600;letter-spacing:-.3px}
+.header-actions{display:flex;gap:8px;align-items:center}
+#notify-btn{
+  background:var(--bg3);border:1px solid var(--border);color:var(--text);
+  font-size:12px;padding:5px 10px;border-radius:8px;cursor:pointer;
+  white-space:nowrap;
+}
+#notify-btn.on{border-color:var(--green);color:var(--green)}
+#notify-btn.error{border-color:var(--red);color:var(--red)}
+
+/* ── Connection status pill */
+#conn-pill{
+  font-size:11px;padding:3px 8px;border-radius:10px;
+  background:var(--bg3);border:1px solid var(--border);color:var(--muted);
+  transition:all .3s;
+}
+#conn-pill.connected{border-color:var(--green);color:var(--green)}
+#conn-pill.error{border-color:var(--red);color:var(--red)}
+
+/* ── Session list */
+#session-list{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch}
+.group-header{
+  padding:8px 16px 4px;font-size:11px;color:var(--muted);
+  text-transform:uppercase;letter-spacing:.8px;font-weight:500;
+}
+.session-item{
+  display:flex;align-items:center;gap:12px;
+  padding:12px 16px;cursor:pointer;
+  border-bottom:1px solid var(--border);
+  transition:background .1s;
+}
+.session-item:active,.session-item.selected{background:var(--bg3)}
+
+.dot{width:9px;height:9px;border-radius:50%;flex-shrink:0}
+.dot.running{background:var(--green);box-shadow:0 0 6px var(--green)}
+.dot.waiting{background:var(--yellow);box-shadow:0 0 6px var(--yellow)}
+.dot.idle   {background:var(--gray)}
+.dot.error  {background:var(--red);box-shadow:0 0 6px var(--red)}
+
+.session-info{flex:1;min-width:0}
+.session-title{font-size:15px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.session-meta {font-size:12px;color:var(--muted);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.session-badge{
+  font-size:10px;text-transform:uppercase;letter-spacing:.4px;padding:2px 6px;
+  border-radius:6px;flex-shrink:0;
+}
+.session-badge.waiting{background:#3a300a;color:var(--yellow)}
+.session-badge.running{background:#0a2a0a;color:var(--green)}
+.session-badge.idle   {background:var(--bg3);color:var(--muted)}
+.session-badge.error  {background:#2a0a0a;color:var(--red)}
+
+.empty-state{
+  text-align:center;color:var(--muted);padding:60px 16px;
+  font-size:15px;line-height:1.7;
+}
+.empty-state code{font-size:12px;background:var(--bg3);padding:2px 6px;border-radius:4px}
+
+/* ── Error banner */
+#error-banner{
+  background:#2a0a0a;border-bottom:1px solid #5a1a1a;
+  color:#f08080;font-size:13px;padding:8px 16px;display:none;
+}
+#error-banner.show{display:block}
+
+/* ── Install banner */
+#install-banner{
+  background:#1a2540;border-top:1px solid #2a3a60;
+  padding:12px 16px;padding-bottom:calc(12px + var(--safe-bottom));
+  font-size:13px;line-height:1.5;color:#aab;display:none;
+}
+#install-banner.show{display:block}
+
+/* ── Detail drawer */
+#detail{
+  position:fixed;inset:0;background:var(--bg);
+  display:flex;flex-direction:column;
+  transform:translateX(100%);
+  transition:transform .25s cubic-bezier(.4,0,.2,1);z-index:10;
+}
+#detail.open{transform:translateX(0)}
+
+#detail-header{
+  flex-shrink:0;display:flex;align-items:center;gap:10px;
+  padding:12px 16px;
+  padding-top:calc(12px + var(--safe-top));
+  background:var(--bg2);border-bottom:1px solid var(--border);
+}
+#back-btn{
+  background:none;border:none;color:var(--accent);
+  font-size:16px;padding:4px 8px 4px 0;cursor:pointer;
+}
+#detail-title-group{flex:1;min-width:0}
+#detail-title{font-size:17px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#detail-meta{font-size:11px;color:var(--muted);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#detail-status{font-size:12px;flex-shrink:0;padding:3px 8px;border-radius:8px}
+#refresh-btn{
+  background:none;border:none;color:var(--muted);font-size:18px;
+  cursor:pointer;padding:4px;flex-shrink:0;
+}
+
+#output-area{
+  flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;
+  padding:4px 16px 12px;
+  font-size:13px;line-height:1.6;color:var(--text);
+  background:var(--bg);
+}
+
+/* conversation */
+.conv-group{padding:10px 0}
+.conv-group+.conv-group{border-top:1px solid var(--border)}
+.conv-role{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;
+  margin-bottom:5px}
+.conv-group.user .conv-role{color:var(--accent)}
+.conv-group.assistant .conv-role{color:var(--green)}
+.conv-text{white-space:pre-wrap;word-break:break-word;font-size:13px;line-height:1.65;color:var(--text)}
+.conv-tool{font-size:12px;color:var(--muted);padding:1px 0;font-family:'SF Mono','Menlo',monospace;
+  display:flex;align-items:baseline;flex-wrap:wrap;gap:0 4px;margin-top:3px}
+.conv-tool-name{flex-shrink:0}
+.conv-tool-cmd{color:#555;white-space:pre-wrap;word-break:break-all}
+.conv-spacer{height:3px}
+.conv-past{opacity:.45;margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid var(--border)}
+.conv-past .conv-role{color:var(--muted)}
+.hist-divider{text-align:center;font-size:10px;color:var(--muted);padding:4px 0;
+  letter-spacing:.5px;text-transform:uppercase}
+.output-placeholder{color:var(--muted);font-style:italic}
+
+#reply-area{
+  flex-shrink:0;display:flex;gap:8px;padding:10px 16px;
+  padding-bottom:calc(10px + var(--safe-bottom));
+  background:var(--bg2);border-top:1px solid var(--border);
+}
+#reply-input{
+  flex:1;background:var(--bg3);border:1px solid var(--border);
+  color:var(--text);font-size:15px;padding:8px 12px;
+  border-radius:10px;outline:none;resize:none;
+  font-family:inherit;max-height:100px;line-height:1.4;
+}
+#reply-input:focus{border-color:var(--accent)}
+#send-btn{
+  background:var(--accent);border:none;color:#fff;
+  font-size:15px;font-weight:600;padding:8px 16px;
+  border-radius:10px;cursor:pointer;flex-shrink:0;
+  transition:background .15s,opacity .15s;
+}
+#send-btn:disabled{opacity:.35;cursor:default}
+#send-btn.stop{background:var(--red)}
+#reply-input:disabled{opacity:.4}
+
+/* inline diff */
+.conv-diff{margin:4px 0;border-radius:6px;overflow:hidden;
+  font-family:'SF Mono','Menlo',monospace;font-size:11px;line-height:1.5}
+.conv-diff-header{background:var(--bg3);color:var(--muted);padding:3px 8px;
+  font-size:10px;letter-spacing:.3px}
+.conv-diff-body{background:#111}
+.diff-line{padding:1px 8px;white-space:pre-wrap;word-break:break-all}
+.diff-line.rem{background:rgba(224,92,92,.18);color:#e07070}
+.diff-line.add{background:rgba(78,201,78,.13);color:#5ec95e}
+.diff-line.ctx{color:#444}
+</style>
+</head>
+<body>
+
+<!-- Token gate — shown until a valid token is entered -->
+<div id="token-gate" style="display:none">
+  <h2>🤖 Agent Deck</h2>
+  <p>Enter the relay token to connect.<br>This is the <code>RELAY_TOKEN</code> you set during setup.</p>
+  <input id="token-input" type="password" placeholder="Relay token" autocomplete="off" spellcheck="false">
+  <div id="token-error">Wrong token — try again</div>
+  <button id="token-submit" onclick="submitToken()">Connect</button>
+</div>
+
+<div id="error-banner"></div>
+
+<header>
+  <h1>🤖 Agent Deck</h1>
+  <div class="header-actions">
+    <div id="conn-pill">···</div>
+    <button id="notify-btn" onclick="handleNotifyBtn()">🔔 Alerts</button>
+  </div>
+</header>
+
+<div id="session-list">
+  <div class="empty-state">Connecting…</div>
+</div>
+
+<div id="install-banner">
+  📲 <strong style="color:var(--accent)">To enable push notifications:</strong><br>
+  Tap the Share button <strong>↑</strong> in Safari → <em>Add to Home Screen</em>,
+  then open the app from your Home Screen.
+</div>
+
+<!-- Detail / reply drawer -->
+<div id="detail">
+  <div id="detail-header">
+    <button id="back-btn" onclick="closeDetail()">‹</button>
+    <div id="detail-title-group">
+      <div id="detail-title">Session</div>
+      <div id="detail-meta"></div>
+    </div>
+    <div id="detail-status" class="dot idle"></div>
+    <button id="refresh-btn" onclick="refreshOutput()" title="Refresh output">↻</button>
+  </div>
+  <div id="output-area"><span class="output-placeholder">Loading…</span></div>
+  <div id="reply-area">
+    <textarea id="reply-input" rows="1"
+      placeholder="Send a message to Claude…"
+      oninput="autoResize(this)"></textarea>
+    <button id="send-btn" onclick="sendReply()" disabled>Send</button>
+  </div>
+</div>
+
+<script>
+// ─────────────────────────────────────────────────────────────────────────────
+// Config / token
+const BASE = window.location.origin;
+const TOKEN_KEY = 'relay_token';
+
+let _token = localStorage.getItem(TOKEN_KEY) || '';
+
+function api(path, opts = {}) {
+  const headers = {
+    'Content-Type': 'application/json',
+    ...(_token ? {'Authorization': 'Bearer ' + _token} : {}),
+    ...(opts.headers || {}),
+  };
+  return fetch(BASE + path, {...opts, headers});
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Token gate
+async function submitToken() {
+  const val = document.getElementById('token-input').value.trim();
+  if (!val) return;
+  // Probe the API with the candidate token
+  const r = await fetch(BASE + '/api/sessions', {
+    headers: {'Authorization': 'Bearer ' + val},
+  }).catch(() => null);
+  if (!r || r.status === 401) {
+    document.getElementById('token-error').style.display = 'block';
+    return;
+  }
+  _token = val;
+  localStorage.setItem(TOKEN_KEY, val);
+  document.getElementById('token-gate').style.display = 'none';
+  init();
+}
+
+document.getElementById('token-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter') submitToken();
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// State
+let sessions = [];      // Session[]
+let activeId  = null;   // session ID currently shown in detail drawer
+let vapidKey  = null;   // VAPID public key string
+let outputPollTimer = null; // interval ID for auto-refreshing the open detail
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Errors / UI helpers
+function showError(msg) {
+  const el = document.getElementById('error-banner');
+  el.textContent = '⚠ ' + msg;
+  el.classList.add('show');
+  setTimeout(() => el.classList.remove('show'), 8000);
+}
+function esc(s) {
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+function shortPath(p) {
+  if (!p) return '';
+  return p.replace(/\/$/, '').split('/').slice(-2).join('/');
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Session list
+async function loadSessions() {
+  try {
+    const r = await api('/api/sessions');
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    sessions = await r.json();
+    renderList();
+  } catch (e) {
+    showError(`Could not load sessions: ${e.message}`);
+    document.getElementById('session-list').innerHTML =
+      `<div class="empty-state">
+        Could not reach relay.<br>
+        <small>${esc(e.message)}</small><br><br>
+        Make sure <code>agent-deck-relay</code> is running<br>
+        and reachable at <code>${esc(BASE)}</code>
+      </div>`;
+  }
+}
+
+function relTime(ts) {
+  if (!ts) return '';
+  const diff = Date.now() - new Date(ts).getTime();
+  const s = Math.floor(diff / 1000);
+  if (s < 60) return `${s}s ago`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  return `${Math.floor(h / 24)}d ago`;
+}
+
+function renderList() {
+  const el = document.getElementById('session-list');
+  if (!sessions || sessions.length === 0) {
+    el.innerHTML = `<div class="empty-state">No sessions found.<br><small>Run <code>agent-deck add -c claude .</code> to create one.</small></div>`;
+    return;
+  }
+
+  // Sort by last_seen desc (if available), otherwise by status priority
+  const statusOrder = {waiting:0, running:1, idle:2, error:3};
+  const sorted = [...sessions].sort((a, b) => {
+    if (a.last_seen && b.last_seen) return new Date(b.last_seen) - new Date(a.last_seen);
+    if (a.last_seen) return -1;
+    if (b.last_seen) return 1;
+    return (statusOrder[a.status] ?? 4) - (statusOrder[b.status] ?? 4);
+  });
+
+  // Group by group name
+  const groups = {};
+  for (const s of sorted) {
+    const g = s.group || '';
+    (groups[g] = groups[g] || []).push(s);
+  }
+
+  let html = '';
+  for (const [group, items] of Object.entries(groups)) {
+    if (group) html += `<div class="group-header">${esc(group)}</div>`;
+    for (const s of items) {
+      const metaParts = [];
+      if (s.tool) metaParts.push(esc(s.tool));
+      if (s.last_seen) metaParts.push(relTime(s.last_seen));
+      else if (s.path) metaParts.push(esc(shortPath(s.path)));
+      html += `
+        <div class="session-item ${s.id===activeId?'selected':''}" onclick="openDetail('${esc(s.id)}')">
+          <div class="dot ${s.status}"></div>
+          <div class="session-info">
+            <div class="session-title">${esc(s.title||s.id)}</div>
+            <div class="session-meta">${metaParts.join(' · ')}</div>
+          </div>
+          <div class="session-badge ${s.status}">${s.status}</div>
+        </div>`;
+    }
+  }
+  el.innerHTML = html;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Detail drawer
+function startOutputPolling() {
+  stopOutputPolling();
+  outputPollTimer = setInterval(() => { if (activeId) refreshOutput(); }, 5000);
+}
+function stopOutputPolling() {
+  if (outputPollTimer) { clearInterval(outputPollTimer); outputPollTimer = null; }
+}
+
+async function openDetail(id) {
+  activeId = id;
+  renderList();
+  startOutputPolling();
+
+  const s = sessions.find(x => x.id === id);
+  document.getElementById('detail-title').textContent = (s && s.title) || id;
+  setDetailMeta(s, null, null);
+  setDetailStatus(s ? s.status : 'idle');
+  document.getElementById('output-area').innerHTML = '<span class="output-placeholder">Loading…</span>';
+  document.getElementById('reply-input').value = '';
+  autoResize(document.getElementById('reply-input'));
+  document.getElementById('send-btn').disabled = false;
+  document.getElementById('detail').classList.add('open');
+
+  await refreshOutput();
+}
+
+function setDetailMeta(s, ts, model) {
+  const el = document.getElementById('detail-meta');
+  if (!el) return;
+  const parts = [];
+  // model from transcript is more precise than the tool field (e.g. "claude-sonnet-4-6")
+  if (model) parts.push(model);
+  else if (s?.tool) parts.push(s.tool);
+  const t = ts || s?.last_seen;
+  if (t) parts.push(relTime(t));
+  el.textContent = parts.join(' · ');
+}
+
+async function refreshOutput() {
+  if (!activeId) return;
+  const btn = document.getElementById('refresh-btn');
+  btn.style.opacity = '.4';
+  try {
+    const id = encodeURIComponent(activeId);
+    const transcriptResp = await api(`/api/sessions/${id}/transcript`);
+
+    if (transcriptResp.ok) {
+      const text = await transcriptResp.text();
+      const { msgs, model, lastTs } = parseTranscript(text);
+      const s = sessions.find(x => x.id === activeId);
+      setDetailMeta(s, lastTs, model);
+      const el = document.getElementById('output-area');
+      el.innerHTML = msgs.length
+        ? renderConversation(msgs)
+        : '<span class="output-placeholder">(no messages yet)</span>';
+      el.scrollTop = el.scrollHeight;
+      return;
+    }
+
+    // Transcript not available — fall back to hook history + output endpoint
+    const [histResp, outResp] = await Promise.all([
+      api(`/api/sessions/${id}/history`),
+      api(`/api/sessions/${id}/output`),
+    ]);
+    const history = histResp.ok ? await histResp.json() : [];
+    const outputText = outResp.ok ? await outResp.text() : '';
+    const timeMatch = outputText.match(/^Time:\s*(.+)$/m);
+    const s = sessions.find(x => x.id === activeId);
+    setDetailMeta(s, timeMatch ? timeMatch[1].trim() : null);
+
+    const el = document.getElementById('output-area');
+    el.innerHTML = renderFallbackOutput(history, outputText);
+    el.scrollTop = el.scrollHeight;
+  } catch (e) {
+    document.getElementById('output-area').innerHTML =
+      `<span class="output-placeholder">Could not load output: ${esc(e.message)}</span>`;
+  } finally {
+    btn.style.opacity = '';
+  }
+}
+
+// parseTranscript reads the Claude Code JSONL format.
+// Returns { msgs, model, lastTs } where each msg is { role, text, toolCalls }.
+function parseTranscript(jsonlText) {
+  const msgs = [];
+  let model = null;
+  let lastTs = null;
+
+  for (const line of jsonlText.trim().split('\n')) {
+    if (!line.trim()) continue;
+    try {
+      const entry = JSON.parse(line);
+      if (entry.type !== 'user' && entry.type !== 'assistant') continue;
+      const msg = entry.message;
+      if (!msg?.role) continue;
+      if (entry.timestamp) lastTs = entry.timestamp;
+      if (msg.model) model = msg.model;
+
+      const m = extractContent(msg);
+      if (m) msgs.push(m);
+    } catch { /* malformed line */ }
+  }
+  return { msgs, model, lastTs };
+}
+
+// extractContent pulls text + toolCalls out of a message object.
+// Returns null for messages that are purely internal (tool_result-only user turns).
+function extractContent(msg) {
+  const content = typeof msg.content === 'string'
+    ? [{ type: 'text', text: msg.content }]
+    : (Array.isArray(msg.content) ? msg.content : []);
+
+  const textParts = [];
+  const toolCalls = [];
+  let onlyToolResults = true;
+
+  for (const b of content) {
+    if (b.type === 'text' && b.text?.trim()) {
+      textParts.push(b.text);
+      onlyToolResults = false;
+    } else if (b.type === 'tool_use') {
+      toolCalls.push({ name: b.name || '?', input: b.input || {} });
+      onlyToolResults = false;
+    } else if (b.type === 'tool_result') {
+      // internal feedback — counts toward onlyToolResults
+    } else {
+      onlyToolResults = false;
+    }
+  }
+
+  if (msg.role === 'user' && onlyToolResults && !textParts.length) return null;
+  if (!textParts.length && !toolCalls.length) return null;
+  return { role: msg.role, text: textParts.join('\n').trim(), toolCalls };
+}
+
+// renderToolBlock returns HTML for a single tool call.
+// Edit-type tools (with old_string/new_string) get an inline diff; others get a compact line.
+function renderToolBlock(name, input) {
+  if (!input || typeof input !== 'object') {
+    return `<div class="conv-tool"><span class="conv-tool-name">⚙ ${esc(name)}</span></div>`;
+  }
+
+  // Detect edit / str_replace tools by presence of old+new fields
+  const oldStr = input.old_string ?? input.old_str ?? null;
+  const newStr = input.new_string ?? input.new_str ?? null;
+  const filePath = input.file_path || input.path || '';
+
+  if (oldStr !== null || newStr !== null) {
+    return renderInlineDiff(name, filePath, oldStr ?? '', newStr ?? '');
+  }
+
+  // MultiEdit: array of edits
+  if (Array.isArray(input.edits) && input.edits.length) {
+    return input.edits.map((e, i) =>
+      renderInlineDiff(i === 0 ? name : '', filePath, e.old_string ?? '', e.new_string ?? '')
+    ).join('');
+  }
+
+  // Generic tool — show compact summary line
+  const candidates = [
+    input.command, input.code, input.file_path, input.path,
+    input.query, input.url, input.description,
+  ];
+  const val = candidates.find(v => typeof v === 'string' && v.trim());
+  const summary = val ? val.split('\n')[0]
+                      : (Object.values(input).find(v => typeof v === 'string') || '');
+  return `<div class="conv-tool">` +
+    `<span class="conv-tool-name">⚙ ${esc(name)}</span>` +
+    (summary ? `<span class="conv-tool-cmd">${esc(summary)}</span>` : '') +
+    `</div>`;
+}
+
+function renderInlineDiff(toolName, filePath, oldStr, newStr) {
+  const fileName = filePath.split('/').filter(Boolean).slice(-1)[0] || filePath;
+  const oldLines = oldStr.split('\n');
+  const newLines = newStr.split('\n');
+
+  let html = `<div class="conv-diff">`;
+  html += `<div class="conv-diff-header">`;
+  if (toolName) html += `⚙ ${esc(toolName)}`;
+  if (fileName) html += `${toolName ? '&ensp;' : ''}${esc(fileName)}`;
+  html += `</div><div class="conv-diff-body">`;
+
+  for (const line of oldLines) {
+    html += `<div class="diff-line rem">- ${esc(line)}</div>`;
+  }
+  for (const line of newLines) {
+    html += `<div class="diff-line add">+ ${esc(line)}</div>`;
+  }
+  html += `</div></div>`;
+  return html;
+}
+
+function renderFallbackOutput(history, currentText) {
+  const past = history && history.length > 1 ? history.slice(0, -1) : [];
+  let html = '';
+  for (const entry of past) {
+    html += `<div class="conv-past">` +
+      `<div class="conv-role" style="color:var(--muted)">Claude · ${relTime(entry.ts)}</div>` +
+      `<div class="conv-text">${esc(entry.summary)}</div>` +
+      `</div>`;
+  }
+  if (past.length > 0) html += `<div class="hist-divider">latest</div>`;
+  html += renderOutput(currentText);
+  return html || '<span class="output-placeholder">(no output yet)</span>';
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Fallback output renderer (used when transcript file isn't available)
+
+function renderOutput(raw) {
+  if (!raw || !raw.trim())
+    return '<span class="output-placeholder">(no output yet)</span>';
+
+  // Try JSONL parse
+  const msgs = [];
+  for (const line of raw.trim().split('\n')) {
+    if (!line.trim()) continue;
+    try {
+      const obj = JSON.parse(line);
+      const msg = obj.message || obj; // handle both wrapped and raw
+      if (msg.role) {
+        const m = extractContent(msg);
+        if (m) msgs.push(m);
+      }
+    } catch { /* not JSON */ }
+  }
+  if (msgs.length > 0) return renderConversation(msgs);
+
+  // agent-deck plain text: "Session: ...\nTime: ...\n---\n<content>"
+  const sep = raw.indexOf('---\n');
+  const content = sep !== -1 ? raw.slice(sep + 4).trim() : raw.trim();
+  return `<div class="conv-group assistant"><div class="conv-text">${esc(content)}</div></div>`;
+}
+
+function renderConversation(msgs) {
+  if (!msgs.length) return '<span class="output-placeholder">(no messages yet)</span>';
+
+  // Group consecutive same-role messages so the role label only appears once per run
+  const groups = [];
+  for (const m of msgs) {
+    if (!groups.length || groups[groups.length - 1].role !== m.role) {
+      groups.push({ role: m.role, turns: [m] });
+    } else {
+      groups[groups.length - 1].turns.push(m);
+    }
+  }
+
+  return groups.map(g => {
+    const isUser = g.role === 'user';
+    let html = `<div class="conv-group ${isUser ? 'user' : 'assistant'}">`;
+    html += `<div class="conv-role">${isUser ? 'You' : 'Claude'}</div>`;
+
+    for (const m of g.turns) {
+      if (m.text) html += `<div class="conv-text">${esc(m.text)}</div>`;
+      for (const t of (m.toolCalls || [])) {
+        html += renderToolBlock(t.name, t.input);
+      }
+      // Fallback: if neither text nor tools produced output, show something
+      if (!m.text && !(m.toolCalls?.length)) {
+        html += `<div class="conv-text" style="color:var(--muted)">(empty turn)</div>`;
+      }
+      html += `<div class="conv-spacer"></div>`;
+    }
+    html += '</div>';
+    return html;
+  }).join('');
+}
+
+function setDetailStatus(status) {
+  document.getElementById('detail-status').className = `dot ${status}`;
+  const input = document.getElementById('reply-input');
+  const btn = document.getElementById('send-btn');
+  if (status === 'running') {
+    input.disabled = true;
+    input.placeholder = 'Claude is working…';
+    btn.disabled = false;
+    btn.textContent = '⏹';
+    btn.title = 'Interrupt Claude';
+    btn.classList.add('stop');
+    btn.onclick = interruptSession;
+  } else {
+    input.disabled = false;
+    input.placeholder = 'Send a message to Claude…';
+    btn.textContent = 'Send';
+    btn.title = '';
+    btn.classList.remove('stop');
+    btn.onclick = sendReply;
+    btn.disabled = !input.value.trim();
+  }
+}
+
+async function interruptSession() {
+  if (!activeId) return;
+  try {
+    await api(`/api/sessions/${encodeURIComponent(activeId)}/interrupt`, { method: 'POST' });
+  } catch (e) {
+    showError(`Interrupt failed: ${e.message}`);
+  }
+}
+
+function closeDetail() {
+  stopOutputPolling();
+  document.getElementById('detail').classList.remove('open');
+  activeId = null;
+  renderList();
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Send reply
+async function sendReply() {
+  const input = document.getElementById('reply-input');
+  const msg = input.value.trim();
+  if (!msg || !activeId) return;
+
+  const btn = document.getElementById('send-btn');
+  btn.disabled = true;
+  btn.textContent = '…';
+  input.disabled = true;
+
+  try {
+    const r = await api(`/api/sessions/${encodeURIComponent(activeId)}/send`, {
+      method: 'POST',
+      body: JSON.stringify({message: msg}),
+    });
+    if (!r.ok) {
+      const body = await r.json().catch(() => ({error: `HTTP ${r.status}`}));
+      throw new Error(body.error || `HTTP ${r.status}`);
+    }
+    input.value = '';
+    autoResize(input);
+    // Give Claude a moment, then refresh output
+    setTimeout(refreshOutput, 2000);
+  } catch (e) {
+    showError(`Send failed: ${e.message}`);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Send';
+    input.disabled = false;
+    input.focus();
+  }
+}
+
+document.getElementById('reply-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendReply(); }
+});
+
+function autoResize(el) {
+  el.style.height = 'auto';
+  el.style.height = Math.min(el.scrollHeight, 100) + 'px';
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SSE event stream
+let evtSource = null;
+let reconnectDelay = 1000;
+
+function connectSSE() {
+  const connEl = document.getElementById('conn-pill');
+  connEl.textContent = 'connecting';
+  connEl.className = '';
+
+  const evtUrl = new URL('/api/events', BASE);
+  if (_token) evtUrl.searchParams.set('token', _token);
+  evtSource = new EventSource(evtUrl.toString());
+
+  evtSource.onopen = () => {
+    connEl.textContent = 'live';
+    connEl.className = 'connected';
+    reconnectDelay = 1000; // reset backoff on success
+  };
+
+  evtSource.onmessage = e => {
+    let ev;
+    try { ev = JSON.parse(e.data); } catch { return; }
+
+    if (ev.type === 'snapshot' || ev.type === 'status_change') {
+      if (ev.session) {
+        const idx = sessions.findIndex(s => s.id === ev.session.id);
+        if (idx !== -1) sessions[idx] = {...sessions[idx], ...ev.session};
+        else sessions.push(ev.session);
+        renderList();
+        if (activeId === ev.session.id) setDetailStatus(ev.session.status);
+      }
+    }
+
+    if (ev.type === 'hook' && ev.session) {
+      // A hook arrived — refresh the open session's output if it matches
+      if (activeId === ev.session.id) {
+        setTimeout(refreshOutput, 500);
+      }
+    }
+  };
+
+  evtSource.onerror = () => {
+    connEl.textContent = 'offline';
+    connEl.className = 'error';
+    evtSource.close();
+    // Exponential backoff capped at 30s
+    setTimeout(connectSSE, reconnectDelay);
+    reconnectDelay = Math.min(reconnectDelay * 2, 30000);
+  };
+}
+
+// Handle navigate messages from the service worker (notification tap)
+navigator.serviceWorker?.addEventListener('message', e => {
+  if (e.data?.type === 'navigate' && e.data.url) {
+    const params = new URLSearchParams(e.data.url.split('?')[1]||'');
+    const sid = params.get('session');
+    if (sid) openDetail(sid);
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Push notifications
+async function loadVAPIDKey() {
+  if (vapidKey) return true;
+  try {
+    const r = await api('/api/vapid-public');
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const d = await r.json();
+    vapidKey = d.publicKey;
+    return true;
+  } catch (e) {
+    showError(`Could not load VAPID key: ${e.message}`);
+    return false;
+  }
+}
+
+function urlBase64ToUint8Array(b64) {
+  const pad = '='.repeat((4 - b64.length % 4) % 4);
+  const raw = atob((b64 + pad).replace(/-/g,'+').replace(/_/g,'/'));
+  return Uint8Array.from([...raw].map(c => c.charCodeAt(0)));
+}
+
+const isStandalone = () =>
+  window.matchMedia('(display-mode: standalone)').matches || navigator.standalone;
+
+async function handleNotifyBtn() {
+  const btn = document.getElementById('notify-btn');
+
+  if (!isStandalone()) {
+    document.getElementById('install-banner').classList.add('show');
+    return;
+  }
+  if (!('serviceWorker' in navigator)) {
+    showError('Service workers not supported in this browser.');
+    return;
+  }
+
+  // On iOS, PushManager only appears on the SW registration object, NOT on window —
+  // so we must await serviceWorker.ready before checking for push support.
+  let reg;
+  try {
+    reg = await navigator.serviceWorker.ready;
+  } catch (e) {
+    showError('Service worker not ready: ' + e.message);
+    return;
+  }
+
+  if (!reg.pushManager) {
+    showError('Web Push not available. Requires iOS 16.4+ with the app opened from Home Screen.');
+    btn.className = 'error';
+    return;
+  }
+
+  if (Notification.permission === 'denied') {
+    showError('Notifications blocked. Remove from Home Screen, re-add, then try again.');
+    btn.className = 'error';
+    btn.textContent = '🔕 Blocked';
+    return;
+  }
+
+  if (Notification.permission === 'granted') {
+    const existing = await reg.pushManager.getSubscription();
+    if (existing) {
+      // Always re-POST to server — iOS endpoints can silently change after restart
+      await api('/api/push/subscribe', { method: 'POST', body: JSON.stringify(existing.toJSON()) });
+      btn.className = 'on';
+      btn.textContent = '🔔 On';
+      return;
+    }
+  }
+
+  const perm = await Notification.requestPermission();
+  if (perm !== 'granted') {
+    btn.className = 'error';
+    btn.textContent = '🔕 Denied';
+    return;
+  }
+  await subscribeToPush(reg);
+}
+
+async function subscribeToPush(reg) {
+  const btn = document.getElementById('notify-btn');
+  try {
+    if (!await loadVAPIDKey()) return;
+    if (!reg) reg = await navigator.serviceWorker.ready;
+    const sub = await reg.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: urlBase64ToUint8Array(vapidKey),
+    });
+    const r = await api('/api/push/subscribe', {
+      method: 'POST',
+      body: JSON.stringify(sub.toJSON()),
+    });
+    if (!r.ok && r.status !== 204) throw new Error(`server returned ${r.status}`);
+    btn.className = 'on';
+    btn.textContent = '🔔 On';
+  } catch (e) {
+    showError(`Notifications failed: ${e.message}`);
+    btn.className = 'error';
+    btn.textContent = '🔔 Failed';
+  }
+}
+
+async function syncNotifyBtn() {
+  if (!isStandalone() || !('serviceWorker' in navigator)) return;
+  const btn = document.getElementById('notify-btn');
+  try {
+    const reg = await navigator.serviceWorker.ready;
+    if (!reg.pushManager) return;
+    const sub = await reg.pushManager.getSubscription();
+    if (sub && Notification.permission === 'granted') {
+      btn.className = 'on'; btn.textContent = '🔔 On';
+    } else if (Notification.permission === 'denied') {
+      btn.className = 'error'; btn.textContent = '🔕 Blocked';
+    }
+  } catch { /* ignore */ }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Deep-link: ?session=<id> (from push notification tap)
+function handleDeepLink() {
+  const params = new URLSearchParams(window.location.search);
+  const sid = params.get('session');
+  if (!sid) return;
+  // Wait up to 5s for sessions to load, then open
+  const t0 = Date.now();
+  const poll = setInterval(() => {
+    if (Date.now() - t0 > 5000) { clearInterval(poll); return; }
+    if (sessions.find(s => s.id === sid)) {
+      clearInterval(poll);
+      openDetail(sid);
+    }
+  }, 250);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Service worker
+async function registerSW() {
+  if (!('serviceWorker' in navigator)) return;
+  try {
+    const reg = await navigator.serviceWorker.register('/sw.js');
+    console.log('SW registered, scope:', reg.scope);
+  } catch (e) {
+    console.warn('SW registration failed:', e);
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Init
+async function init() {
+  // Show token gate if we have no token stored
+  if (!_token) {
+    document.getElementById('token-gate').style.display = 'flex';
+    return;
+  }
+  // Verify the stored token is still valid before proceeding
+  const probe = await fetch(BASE + '/api/sessions', {
+    headers: {'Authorization': 'Bearer ' + _token},
+  }).catch(() => null);
+  if (probe && probe.status === 401) {
+    // Token was revoked or changed — clear and show gate
+    localStorage.removeItem(TOKEN_KEY);
+    _token = '';
+    document.getElementById('token-gate').style.display = 'flex';
+    return;
+  }
+
+  await registerSW();
+  loadVAPIDKey(); // warm up, non-blocking
+  await loadSessions();
+  connectSSE();
+  syncNotifyBtn();
+  handleDeepLink();
+  // Fallback refresh every 30s in case SSE misses something
+  setInterval(loadSessions, 30_000);
+}
+
+init();
+</script>
+</body>
+</html>
