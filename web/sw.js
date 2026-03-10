@@ -1,8 +1,8 @@
 // Service worker for agent-deck relay PWA.
 // Handles Web Push notifications and basic asset caching.
 
-const CACHE = 'agent-deck-relay-v1';
-const PRECACHE = ['/', '/manifest.json', '/icons/icon-192.png'];
+const CACHE = 'agent-deck-relay-v2';
+const PRECACHE = ['/', '/manifest.json', '/icons/icon-192.png', '/js/marked.min.js'];
 
 // ── Install: precache shell ───────────────────────────────────────────────────
 self.addEventListener('install', e => {

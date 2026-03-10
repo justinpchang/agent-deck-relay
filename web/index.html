@@ -10,7 +10,7 @@
 <link rel="manifest" href="/manifest.json">
 <link rel="apple-touch-icon" href="/icons/icon-192.png">
 <title>Agent Deck</title>
-<script src="https://cdn.jsdelivr.net/npm/marked@9/marked.min.js"></script>
+<script src="/js/marked.min.js"></script>
 <style>
 /* ── Token gate */
 #token-gate{
@@ -349,9 +349,19 @@ function esc(s) {
   return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
 
-// Configure marked once (runs after the CDN script loads synchronously)
+// Configure marked — escape raw HTML instead of passing it through.
+// Without this, messages containing </div> or other tags corrupt the DOM layout.
 if (typeof marked !== 'undefined') {
-  marked.use({ breaks: true, gfm: true });
+  marked.use({
+    breaks: true,
+    gfm: true,
+    renderer: {
+      html({ text }) {
+        // Escape raw HTML blocks so they display as literal text, not injected markup
+        return text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      },
+    },
+  });
 }
 
 function renderMarkdown(text) {
