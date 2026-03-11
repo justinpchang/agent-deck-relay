@@ -455,7 +455,9 @@ function renderList() {
         </div>`;
     }
   }
+  const prev = el.scrollTop;
   el.innerHTML = html;
+  el.scrollTop = prev;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -512,10 +514,11 @@ async function refreshOutput() {
       const s = sessions.find(x => x.id === activeId);
       setDetailMeta(s, lastTs, model);
       const el = document.getElementById('output-area');
+      const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 60;
       el.innerHTML = msgs.length
         ? renderConversation(msgs)
         : '<span class="output-placeholder">(no messages yet)</span>';
-      el.scrollTop = el.scrollHeight;
+      if (atBottom) el.scrollTop = el.scrollHeight;
       return;
     }
 
@@ -531,8 +534,9 @@ async function refreshOutput() {
     setDetailMeta(s, timeMatch ? timeMatch[1].trim() : null);
 
     const el = document.getElementById('output-area');
+    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 60;
     el.innerHTML = renderFallbackOutput(history, outputText);
-    el.scrollTop = el.scrollHeight;
+    if (atBottom) el.scrollTop = el.scrollHeight;
   } catch (e) {
     document.getElementById('output-area').innerHTML =
       `<span class="output-placeholder">Could not load output: ${esc(e.message)}</span>`;
