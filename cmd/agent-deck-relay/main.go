@@ -287,27 +287,41 @@ func (r *Relay) runPoll() {
 	}
 	r.lastPollError = ""
 
-	for _, s := range sessions {
-		prev, known := r.sessions[s.ID]
-		r.sessions[s.ID] = s
+	// Collect changes before replacing the map
+	type statusChange struct {
+		s   Session
+		old string
+	}
+	var changed []statusChange
+	var removed []Session
 
-		if known && prev.Status != s.Status {
-			ev := Event{
-				Type:      "status_change",
-				Session:   &s,
-				OldStatus: prev.Status,
-				Ts:        time.Now(),
-			}
-			// Unlock before broadcasting/pushing (both can block briefly)
-			r.mu.Unlock()
-			r.broadcast(ev)
-			if s.Status == "waiting" {
-				go r.pushToAll(s, "")
-			}
-			r.mu.Lock()
+	newMap := make(map[string]Session, len(sessions))
+	for _, s := range sessions {
+		newMap[s.ID] = s
+		if prev, known := r.sessions[s.ID]; known && prev.Status != s.Status {
+			changed = append(changed, statusChange{s, prev.Status})
 		}
 	}
+	for id, prev := range r.sessions {
+		if _, stillExists := newMap[id]; !stillExists {
+			removed = append(removed, prev)
+		}
+	}
+	r.sessions = newMap // replace entirely — purges deleted sessions
 	r.mu.Unlock()
+
+	for _, c := range changed {
+		s := c.s
+		r.broadcast(Event{Type: "status_change", Session: &s, OldStatus: c.old, Ts: time.Now()})
+		if s.Status == "waiting" {
+			go r.pushToAll(s, "")
+		}
+	}
+	for _, s := range removed {
+		s := s
+		debugLog("session removed from cache: %s (%s)", s.ID, s.Title)
+		r.broadcast(Event{Type: "removed", Session: &s, Ts: time.Now()})
+	}
 }
 
 // ── SSE broadcast ─────────────────────────────────────────────────────────────

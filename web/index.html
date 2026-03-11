@@ -829,7 +829,9 @@ function connectSSE() {
   evtSource.onopen = () => {
     connEl.textContent = 'live';
     connEl.className = 'connected';
-    reconnectDelay = 1000; // reset backoff on success
+    reconnectDelay = 1000;
+    // Fetch a clean session list on (re)connect so stale sessions never linger
+    loadSessions();
   };
 
   evtSource.onmessage = e => {
@@ -846,8 +848,13 @@ function connectSSE() {
       }
     }
 
+    if (ev.type === 'removed' && ev.session) {
+      sessions = sessions.filter(s => s.id !== ev.session.id);
+      renderList();
+      if (activeId === ev.session.id) closeDetail();
+    }
+
     if (ev.type === 'hook' && ev.session) {
-      // A hook arrived — refresh the open session's output if it matches
       if (activeId === ev.session.id) {
         setTimeout(refreshOutput, 500);
       }
