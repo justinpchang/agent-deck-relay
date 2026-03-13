@@ -1054,7 +1054,10 @@ func main() {
 		}
 	}
 
-	relay := NewRelay(state, *stateFile, pub, priv, *vapidEmail, *adProfile)
+	// The webpush library prepends "mailto:" to the subscriber automatically,
+	// so strip it if the caller already included it to avoid "mailto:mailto:...".
+	email := strings.TrimPrefix(*vapidEmail, "mailto:")
+	relay := NewRelay(state, *stateFile, pub, priv, email, *adProfile)
 
 	// Warm up session cache before the first poll tick
 	log.Println("fetching initial session list...")
