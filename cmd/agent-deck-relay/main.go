@@ -343,7 +343,9 @@ func (r *Relay) runPoll() {
 		s := c.s
 		r.broadcast(Event{Type: "status_change", Session: &s, OldStatus: c.old, Ts: time.Now()})
 		if s.Status == "waiting" {
-			go r.pushToAll(s, "")
+			go func() {
+				r.pushToAll(s, lastAssistantMessage(s, 300))
+			}()
 		}
 	}
 	for _, s := range removed {
@@ -612,6 +614,126 @@ func (r *Relay) handleInterrupt(w http.ResponseWriter, req *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// findTranscriptPath returns the path to the JSONL transcript file for s.
+// Agent-deck IDs don't match Claude Code's UUID filenames, so we match by
+// file birth time (macOS APFS), falling back to most-recently-modified.
+func findTranscriptPath(s Session) (string, error) {
+	home := os.Getenv("HOME")
+	claudeDir := filepath.Join(home, ".claude", "projects", claudeProjectKey(s.Path))
+
+	// Fast path: direct match (works if ID format ever aligns with filename)
+	direct := filepath.Join(claudeDir, s.ID+".jsonl")
+	if _, err := os.Stat(direct); err == nil {
+		return direct, nil
+	}
+
+	entries, err := os.ReadDir(claudeDir)
+	if err != nil {
+		return "", fmt.Errorf("claude project dir not found: %w", err)
+	}
+
+	createdAt, hasCreatedAt := sessionCreatedAt(s.ID)
+	var bestPath string
+	var bestDiff time.Duration = -1
+	var latestPath string
+	var latestMod time.Time
+
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".jsonl") {
+			continue
+		}
+		info, ierr := e.Info()
+		if ierr != nil {
+			continue
+		}
+		if info.ModTime().After(latestMod) {
+			latestMod = info.ModTime()
+			latestPath = filepath.Join(claudeDir, e.Name())
+		}
+		if hasCreatedAt {
+			if stat, ok := info.Sys().(*syscall.Stat_t); ok {
+				birth := time.Unix(stat.Birthtimespec.Sec, int64(stat.Birthtimespec.Nsec))
+				diff := birth.Sub(createdAt)
+				if diff < 0 {
+					diff = -diff
+				}
+				if bestDiff < 0 || diff < bestDiff {
+					bestDiff = diff
+					bestPath = filepath.Join(claudeDir, e.Name())
+				}
+			}
+		}
+	}
+
+	const maxBirthDiff = 30 * time.Second
+	if hasCreatedAt && bestPath != "" && bestDiff >= 0 && bestDiff <= maxBirthDiff {
+		debugLog("transcript: matched %s by birth time (diff=%v) for session %s", bestPath, bestDiff, s.ID)
+		return bestPath, nil
+	}
+	if latestPath != "" {
+		debugLog("transcript: using most recent %s for session %s", latestPath, s.ID)
+		return latestPath, nil
+	}
+	return "", fmt.Errorf("no transcript found")
+}
+
+// lastAssistantMessage reads the session's transcript and returns the last
+// assistant text message, truncated to maxLen chars. Returns "" on any error.
+func lastAssistantMessage(s Session, maxLen int) string {
+	if s.Path == "" {
+		return ""
+	}
+	path, err := findTranscriptPath(s)
+	if err != nil {
+		return ""
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+
+	var lastText string
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		var entry struct {
+			Type    string `json:"type"`
+			Message struct {
+				Content json.RawMessage `json:"content"`
+			} `json:"message"`
+		}
+		if err := json.Unmarshal([]byte(line), &entry); err != nil || entry.Type != "assistant" {
+			continue
+		}
+		// content can be a string or an array of blocks
+		var text string
+		if len(entry.Message.Content) > 0 {
+			if entry.Message.Content[0] == '"' {
+				json.Unmarshal(entry.Message.Content, &text)
+			} else {
+				var blocks []struct {
+					Type string `json:"type"`
+					Text string `json:"text"`
+				}
+				if json.Unmarshal(entry.Message.Content, &blocks) == nil {
+					for _, b := range blocks {
+						if b.Type == "text" && b.Text != "" {
+							text = b.Text
+							break
+						}
+					}
+				}
+			}
+		}
+		if text != "" {
+			lastText = text
+		}
+	}
+	return truncate(lastText, maxLen)
+}
+
 // GET /api/sessions/{id}/transcript — reads the Claude Code JSONL conversation file directly.
 // Claude stores full conversation history at ~/.claude/projects/<path-encoded>/<session-id>.jsonl
 // where the path encoding replaces every "/" with "-".
@@ -635,69 +757,15 @@ func (r *Relay) handleTranscript(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	home := os.Getenv("HOME")
-	claudeDir := filepath.Join(home, ".claude", "projects", claudeProjectKey(s.Path))
-	transcriptPath := filepath.Join(claudeDir, s.ID+".jsonl")
-
-	data, err := os.ReadFile(transcriptPath)
+	path, err := findTranscriptPath(s)
 	if err != nil {
-		// The agent-deck session ID format (<hash>-<unix_ts>) doesn't match the UUID filenames
-		// Claude Code uses for JSONL files. Scan the project dir and match by file birth time
-		// (macOS APFS preserves creation time), falling back to most-recently-modified.
-		entries, dirErr := os.ReadDir(claudeDir)
-		if dirErr != nil {
-			http.Error(w, fmt.Sprintf("claude project dir not found: %v", dirErr), http.StatusNotFound)
-			return
-		}
-		createdAt, hasCreatedAt := sessionCreatedAt(s.ID)
-		var bestPath string
-		var bestDiff time.Duration = -1 // -1 = unset
-		var latestPath string
-		var latestMod time.Time
-		for _, e := range entries {
-			if e.IsDir() || !strings.HasSuffix(e.Name(), ".jsonl") {
-				continue
-			}
-			info, ierr := e.Info()
-			if ierr != nil {
-				continue
-			}
-			if info.ModTime().After(latestMod) {
-				latestMod = info.ModTime()
-				latestPath = filepath.Join(claudeDir, e.Name())
-			}
-			if hasCreatedAt {
-				if stat, ok := info.Sys().(*syscall.Stat_t); ok {
-					birth := time.Unix(stat.Birthtimespec.Sec, int64(stat.Birthtimespec.Nsec))
-					diff := birth.Sub(createdAt)
-					if diff < 0 {
-						diff = -diff
-					}
-					if bestDiff < 0 || diff < bestDiff {
-						bestDiff = diff
-						bestPath = filepath.Join(claudeDir, e.Name())
-					}
-				}
-			}
-		}
-		// Use birth-time match if within 30s; otherwise fall back to most recently modified.
-		const maxBirthDiff = 30 * time.Second
-		pickedPath := latestPath
-		if hasCreatedAt && bestPath != "" && bestDiff >= 0 && bestDiff <= maxBirthDiff {
-			pickedPath = bestPath
-			debugLog("transcript: matched %s by birth time (diff=%v) for session %s", pickedPath, bestDiff, id)
-		} else {
-			debugLog("transcript: using most recent %s for session %s", pickedPath, id)
-		}
-		if pickedPath == "" {
-			http.Error(w, "no transcript found", http.StatusNotFound)
-			return
-		}
-		data, err = os.ReadFile(pickedPath)
-		if err != nil {
-			http.Error(w, fmt.Sprintf("could not read transcript: %v", err), http.StatusNotFound)
-			return
-		}
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("could not read transcript: %v", err), http.StatusNotFound)
+		return
 	}
 
 	w.Header().Set("Content-Type", "application/x-ndjson")
@@ -857,7 +925,13 @@ func (r *Relay) handleHook(w http.ResponseWriter, req *http.Request) {
 		Ts:      time.Now(),
 	}
 	r.broadcast(ev)
-	go r.pushToAll(s, payload.Summary)
+	go func() {
+		msg := lastAssistantMessage(s, 300)
+		if msg == "" {
+			msg = payload.Summary
+		}
+		r.pushToAll(s, msg)
+	}()
 
 	w.WriteHeader(http.StatusNoContent)
 }
