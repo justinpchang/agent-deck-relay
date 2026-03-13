@@ -948,7 +948,9 @@ func (r *Relay) handleDebugStatus(w http.ResponseWriter, req *http.Request) {
 	enc.Encode(info)
 }
 
-// GET /debug/push-test?session=<id>  — send a test push to all subscribers
+// GET /debug/push-test?session=<id>&delay=<seconds>  — send a test push to all subscribers.
+// delay (default 0) fires the push after N seconds on the server side, so the client
+// can navigate away before it arrives (iOS freezes JS timers when the app is backgrounded).
 func (r *Relay) handlePushTest(w http.ResponseWriter, req *http.Request) {
 	sid := req.URL.Query().Get("session")
 	s := Session{ID: sid, Title: sid, Status: "waiting"}
@@ -959,15 +961,29 @@ func (r *Relay) handlePushTest(w http.ResponseWriter, req *http.Request) {
 	} else {
 		s = Session{ID: "test", Title: "Test Notification", Status: "waiting"}
 	}
+
+	delay := 0
+	if d := req.URL.Query().Get("delay"); d != "" {
+		if n, err := strconv.Atoi(d); err == nil && n > 0 && n <= 60 {
+			delay = n
+		}
+	}
+
 	r.mu.RLock()
 	subCount := len(r.state.Subs)
 	r.mu.RUnlock()
 
-	log.Printf("debug: firing test push for session %q to %d subscriber(s)", s.Title, subCount)
-	go r.pushToAll(s, "This is a test notification from agent-deck-relay.")
+	log.Printf("debug: scheduling test push for session %q to %d subscriber(s) in %ds", s.Title, subCount, delay)
+	go func() {
+		if delay > 0 {
+			time.Sleep(time.Duration(delay) * time.Second)
+		}
+		r.pushToAll(s, "This is a test notification from agent-deck-relay.")
+	}()
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]any{
-		"fired":      true,
+		"scheduled":  true,
+		"delay":      delay,
 		"session":    s.Title,
 		"recipients": subCount,
 	})

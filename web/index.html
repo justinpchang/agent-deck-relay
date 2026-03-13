@@ -916,32 +916,25 @@ function urlBase64ToUint8Array(b64) {
 const isStandalone = () =>
   window.matchMedia('(display-mode: standalone)').matches || navigator.standalone;
 
-let pushTestTimer = null;
 function handlePushTestBtn() {
   const btn = document.getElementById('push-test-btn');
-  if (pushTestTimer) {
-    clearInterval(pushTestTimer);
-    pushTestTimer = null;
+  btn.disabled = true;
+  btn.classList.add('counting');
+  // Fire immediately to the server with a 5s server-side delay.
+  // iOS freezes JS timers when the app is backgrounded, so the countdown
+  // must live on the server — not in a client setTimeout/setInterval.
+  api('/debug/push-test?delay=5').then(() => {
+    btn.textContent = 'Sent — go to home screen!';
+    setTimeout(() => {
+      btn.textContent = 'Test Push';
+      btn.classList.remove('counting');
+      btn.disabled = false;
+    }, 8000);
+  }).catch(() => {
     btn.textContent = 'Test Push';
     btn.classList.remove('counting');
-    return;
-  }
-  let secs = 5;
-  btn.textContent = `Sending in ${secs}s…`;
-  btn.classList.add('counting');
-  pushTestTimer = setInterval(async () => {
-    secs--;
-    if (secs > 0) {
-      btn.textContent = `Sending in ${secs}s…`;
-    } else {
-      clearInterval(pushTestTimer);
-      pushTestTimer = null;
-      btn.textContent = 'Sent!';
-      btn.classList.remove('counting');
-      await api('/debug/push-test');
-      setTimeout(() => { btn.textContent = 'Test Push'; }, 3000);
-    }
-  }, 1000);
+    btn.disabled = false;
+  });
 }
 
 async function handleNotifyBtn() {
