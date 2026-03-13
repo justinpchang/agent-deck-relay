@@ -431,9 +431,9 @@ func (r *Relay) pushToAll(s Session, summary string) {
 		case 200, 201:
 			r.mu.Lock(); r.pushSent++; r.mu.Unlock()
 			debugLog("push OK → ...%s", last20(sub.Endpoint))
-		case 404, 410:
-			// Subscription is gone; queue for removal
-			log.Printf("push: subscription expired (...%s), removing", last20(sub.Endpoint))
+		case 403, 404, 410:
+			// Subscription is gone or rejected; queue for removal
+			log.Printf("push: subscription invalid/expired (%d) (...%s), removing", resp.StatusCode, last20(sub.Endpoint))
 			expired = append(expired, sub.Endpoint)
 		default:
 			r.mu.Lock(); r.pushFailed++; r.mu.Unlock()

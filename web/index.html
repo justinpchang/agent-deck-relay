@@ -1028,15 +1028,23 @@ async function syncNotifyBtn() {
   try {
     const reg = await navigator.serviceWorker.ready;
     if (!reg.pushManager) return;
-    const sub = await reg.pushManager.getSubscription();
-    if (sub && Notification.permission === 'granted') {
-      // Re-POST on every startup so the server gets valid keys even if it
-      // previously stored a stale subscription without them.
-      await api('/api/push/subscribe', { method: 'POST', body: JSON.stringify(sub.toJSON()) });
-      btn.className = 'on'; btn.textContent = '🔔 On';
-    } else if (Notification.permission === 'denied') {
+    if (Notification.permission === 'denied') {
       btn.className = 'error'; btn.textContent = '🔕 Blocked';
+      return;
     }
+    if (Notification.permission !== 'granted') return;
+    // Force a fresh subscription on every startup: Apple invalidates endpoints
+    // when the PWA is reinstalled or permissions change, and the only way to
+    // get a new valid endpoint is to unsubscribe and re-subscribe.
+    if (!await loadVAPIDKey()) return;
+    const existing = await reg.pushManager.getSubscription();
+    if (existing) await existing.unsubscribe();
+    const sub = await reg.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: urlBase64ToUint8Array(vapidKey),
+    });
+    await api('/api/push/subscribe', { method: 'POST', body: JSON.stringify(sub.toJSON()) });
+    btn.className = 'on'; btn.textContent = '🔔 On';
   } catch { /* ignore */ }
 }
 
