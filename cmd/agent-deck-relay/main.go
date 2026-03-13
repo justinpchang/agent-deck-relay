@@ -405,6 +405,9 @@ func (r *Relay) pushToAll(s Session, summary string) {
 	}
 	body = truncate(body, 200)
 
+	// macOS native notification — runs locally on the relay machine
+	go notifyMacOS(title, body)
+
 	payload, _ := json.Marshal(map[string]string{
 		"title":     title,
 		"body":      body,
@@ -461,6 +464,21 @@ func (r *Relay) pushToAll(s Session, summary string) {
 
 	if len(expired) > 0 {
 		r.removeExpiredSubs(expired)
+	}
+}
+
+// notifyMacOS sends a native macOS notification via osascript.
+func notifyMacOS(title, body string) {
+	// Escape backslashes and double-quotes for the AppleScript string literal.
+	esc := func(s string) string {
+		s = strings.ReplaceAll(s, "\\", "\\\\")
+		s = strings.ReplaceAll(s, "\"", "\\\"")
+		return s
+	}
+	script := fmt.Sprintf(`display notification "%s" with title "%s" sound name "Funk"`,
+		esc(body), esc(title))
+	if err := exec.Command("osascript", "-e", script).Run(); err != nil {
+		debugLog("macOS notification failed: %v", err)
 	}
 }
 
