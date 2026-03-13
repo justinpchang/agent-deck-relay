@@ -49,6 +49,19 @@ func claudeProjectKey(path string) string {
 	return nonAlphanumDash.ReplaceAllString(path, "-")
 }
 
+// shortPath returns the last two meaningful path components, e.g.
+// "/Users/justin/dev/owner" → "dev/owner". Mirrors the JS shortPath helper.
+func shortPath(p string) string {
+	parts := strings.Split(strings.TrimRight(p, "/"), "/")
+	if len(parts) >= 2 {
+		return parts[len(parts)-2] + "/" + parts[len(parts)-1]
+	}
+	if len(parts) == 1 {
+		return parts[0]
+	}
+	return p
+}
+
 // sessionCreatedAt parses the Unix timestamp embedded in an agent-deck session ID.
 // agent-deck IDs are formatted as "<hash>-<unix_seconds>", e.g. "05cc70f6-1773251148".
 // Returns zero Time and false if the ID doesn't follow this format.
@@ -382,9 +395,12 @@ func (r *Relay) pushToAll(s Session, summary string) {
 	title := fmt.Sprintf("%s %s", icon, s.Title)
 	body := summary
 	if body == "" {
-		body = fmt.Sprintf("Session is now %s", s.Status)
+		body = "Waiting for your reply"
 	}
-	// Truncate body so the notification isn't enormous
+	// Prepend short project path for multi-agent context, e.g. "dev/owner • ..."
+	if s.Path != "" {
+		body = shortPath(s.Path) + " • " + body
+	}
 	body = truncate(body, 200)
 
 	payload, _ := json.Marshal(map[string]string{
