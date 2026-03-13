@@ -406,6 +406,11 @@ func (r *Relay) pushToAll(s Session, summary string) {
 
 	var expired []string
 	for _, sub := range subs {
+		if sub.Keys.P256dh == "" || sub.Keys.Auth == "" {
+			log.Printf("push: skipping subscription without encryption keys (...%s) — re-open the PWA to re-register", last20(sub.Endpoint))
+			expired = append(expired, sub.Endpoint)
+			continue
+		}
 		resp, err := webpush.SendNotification(payload, &webpush.Subscription{
 			Endpoint: sub.Endpoint,
 			Keys:     webpush.Keys{P256dh: sub.Keys.P256dh, Auth: sub.Keys.Auth},
@@ -855,9 +860,21 @@ func (r *Relay) handleSubscribe(w http.ResponseWriter, req *http.Request) {
 
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	for _, existing := range r.state.Subs {
+	for i, existing := range r.state.Subs {
 		if existing.Endpoint == sub.Endpoint {
-			log.Printf("push: subscription already registered (...%s)", last20(sub.Endpoint))
+			if existing.Keys.P256dh == sub.Keys.P256dh && existing.Keys.Auth == sub.Keys.Auth {
+				log.Printf("push: subscription unchanged (...%s)", last20(sub.Endpoint))
+				w.WriteHeader(http.StatusNoContent)
+				return
+			}
+			// Keys changed (e.g., previously stored without keys) — update in place
+			r.state.Subs[i] = sub
+			if err := r.state.save(r.stateFile); err != nil {
+				log.Printf("save state after subscribe update: %v", err)
+				jsonError(w, "could not persist subscription", http.StatusInternalServerError)
+				return
+			}
+			log.Printf("push: subscription updated (...%s)", last20(sub.Endpoint))
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}

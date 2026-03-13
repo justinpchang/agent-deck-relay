@@ -1030,6 +1030,9 @@ async function syncNotifyBtn() {
     if (!reg.pushManager) return;
     const sub = await reg.pushManager.getSubscription();
     if (sub && Notification.permission === 'granted') {
+      // Re-POST on every startup so the server gets valid keys even if it
+      // previously stored a stale subscription without them.
+      await api('/api/push/subscribe', { method: 'POST', body: JSON.stringify(sub.toJSON()) });
       btn.className = 'on'; btn.textContent = '🔔 On';
     } else if (Notification.permission === 'denied') {
       btn.className = 'error'; btn.textContent = '🔕 Blocked';
