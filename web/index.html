@@ -60,6 +60,12 @@ header h1{font-size:17px;font-weight:600;letter-spacing:-.3px}
 }
 #notify-btn.on{border-color:var(--green);color:var(--green)}
 #notify-btn.error{border-color:var(--red);color:var(--red)}
+#push-test-btn{
+  background:var(--bg3);border:1px solid var(--border);color:var(--muted);
+  font-size:12px;padding:5px 10px;border-radius:8px;cursor:pointer;
+  white-space:nowrap;
+}
+#push-test-btn.counting{border-color:var(--accent);color:var(--accent)}
 
 /* ── Connection status pill */
 #conn-pill{
@@ -256,6 +262,7 @@ header h1{font-size:17px;font-weight:600;letter-spacing:-.3px}
   <h1>🤖 Agent Deck</h1>
   <div class="header-actions">
     <div id="conn-pill">···</div>
+    <button id="push-test-btn" onclick="handlePushTestBtn()">Test Push</button>
     <button id="notify-btn" onclick="handleNotifyBtn()">🔔 Alerts</button>
   </div>
 </header>
@@ -908,6 +915,34 @@ function urlBase64ToUint8Array(b64) {
 
 const isStandalone = () =>
   window.matchMedia('(display-mode: standalone)').matches || navigator.standalone;
+
+let pushTestTimer = null;
+function handlePushTestBtn() {
+  const btn = document.getElementById('push-test-btn');
+  if (pushTestTimer) {
+    clearInterval(pushTestTimer);
+    pushTestTimer = null;
+    btn.textContent = 'Test Push';
+    btn.classList.remove('counting');
+    return;
+  }
+  let secs = 5;
+  btn.textContent = `Sending in ${secs}s…`;
+  btn.classList.add('counting');
+  pushTestTimer = setInterval(async () => {
+    secs--;
+    if (secs > 0) {
+      btn.textContent = `Sending in ${secs}s…`;
+    } else {
+      clearInterval(pushTestTimer);
+      pushTestTimer = null;
+      btn.textContent = 'Sent!';
+      btn.classList.remove('counting');
+      await api('/debug/push-test');
+      setTimeout(() => { btn.textContent = 'Test Push'; }, 3000);
+    }
+  }, 1000);
+}
 
 async function handleNotifyBtn() {
   const btn = document.getElementById('notify-btn');
